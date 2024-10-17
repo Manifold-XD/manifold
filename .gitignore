@@ -1,0 +1,9 @@
+# Cargo generated
+/debug
+/target
+
+# Fmt leftovers
+**/*.rs.bk
+
+# Mergetool leftovers
+**/*.orig
