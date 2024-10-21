@@ -1,6 +1,8 @@
 mod app;
 use app::ManifoldApp;
 
+mod renderer;
+
 use winit::event_loop::EventLoop;
 
 fn main() -> Result<(), impl std::error::Error> {

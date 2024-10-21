@@ -1,7 +1,7 @@
 use super::ManifoldApp;
+use crate::renderer::Renderer;
 
 use super::event_handler::EventHandler;
-use super::rendering::Renderer;
 use super::window_management::WindowManager;
 
 pub use winit::application::ApplicationHandler;
@@ -18,8 +18,9 @@ impl ApplicationHandler for ManifoldApp {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.setup_window(event_loop);
-        let future_wgpu = self.setup_wgpu();
-        pollster::block_on(future_wgpu);
+
+        let future_renderer = Renderer::setup(self.window.clone().unwrap());
+        self.renderer = Some(pollster::block_on(future_renderer))
     }
 
     fn window_event(

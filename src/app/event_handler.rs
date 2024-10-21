@@ -1,6 +1,5 @@
 use super::ManifoldApp;
 
-use super::rendering::Renderer;
 use super::window_management::WindowManager;
 
 use winit::event::*;
@@ -25,9 +24,8 @@ impl EventHandler for ManifoldApp {
                 self.resize(physical_size.width, physical_size.height);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                let size = self.size.as_ref().unwrap();
-                let scaled_width = (size.width as f64 * scale_factor).floor() as u32;
-                let scaled_height = (size.height as f64 * scale_factor).floor() as u32;
+                let scaled_width = (self.size.width as f64 * scale_factor).floor() as u32;
+                let scaled_height = (self.size.height as f64 * scale_factor).floor() as u32;
                 self.resize(scaled_width, scaled_height);
             }
             WindowEvent::KeyboardInput {
@@ -40,7 +38,7 @@ impl EventHandler for ManifoldApp {
                 ..
             } => self.handle_keyboard_input(event_loop, &key),
             WindowEvent::RedrawRequested => {
-                self.render();
+                self.renderer.as_mut().unwrap().render();
             }
             _ => (),
         }
