@@ -9,6 +9,7 @@ pub struct ManifoldApp {
     device: Option<wgpu::Device>,
     queue: Option<wgpu::Queue>,
     config: Option<wgpu::SurfaceConfiguration>,
+    render_pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl ManifoldApp {
@@ -21,6 +22,7 @@ impl ManifoldApp {
             device: None,
             queue: None,
             config: None,
+            render_pipeline: None,
         }
     }
 }
