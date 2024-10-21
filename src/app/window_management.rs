@@ -18,18 +18,15 @@ impl WindowManager for ManifoldApp {
 
         let window_attributes = Window::default_attributes().with_title("Manifold");
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+
         self.window = Some(window.clone());
     }
 
     fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
-            if let (Some(surface), Some(device), Some(config)) =
-                (&self.surface, &self.device, &mut self.config)
-            {
-                config.width = width;
-                config.height = height;
-                surface.configure(device, config);
-            }
+            let renderer = self.renderer.as_mut().expect("No renderer");
+            renderer.resize(width, height);
+
             if let Some(window) = &self.window {
                 window.request_redraw();
             }

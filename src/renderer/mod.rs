@@ -1,13 +1,17 @@
-use super::ManifoldApp;
+use winit::window::Window;
 
-pub trait Renderer {
-    async fn setup_wgpu(&mut self);
-    fn render(&mut self);
+use std::sync::Arc;
+
+pub struct Renderer<'a> {
+    pub surface: wgpu::Surface<'a>,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub config: wgpu::SurfaceConfiguration,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
-impl Renderer for ManifoldApp {
-    async fn setup_wgpu(&mut self) {
-        let window = self.window.clone().unwrap();
+impl<'a> Renderer<'a> {
+    pub async fn setup(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -91,7 +95,7 @@ impl Renderer for ManifoldApp {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, 
+                front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
@@ -107,31 +111,26 @@ impl Renderer for ManifoldApp {
             cache: None,
         });
 
-        self.size = Some(size);
-        self.instance = Some(instance);
-        self.surface = Some(surface);
-        self.device = Some(device);
-        self.queue = Some(queue);
-        self.config = Some(config);
-        self.render_pipeline= Some(render_pipeline);
+        Self {
+            surface: surface,
+            device: device,
+            queue: queue,
+            config: config,
+            render_pipeline: render_pipeline,
+        }
     }
 
-    fn render(&mut self) {
-        let surface = self.surface.as_ref().unwrap();
-        let device = self.device.as_ref().unwrap();
-        let config = self.config.as_ref().unwrap();
-        let queue = self.queue.as_ref().unwrap();
-
-        let frame = match surface.get_current_texture() {
+    pub fn render(&mut self) {
+        let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost) => {
-                surface.configure(device, config);
-                surface
+                self.surface.configure(&self.device, &self.config);
+                self.surface
                     .get_current_texture()
                     .expect("Failed to acquire next surface texture after reconfigure")
             }
             Err(wgpu::SurfaceError::Outdated) => {
-                surface.configure(device, config);
+                self.surface.configure(&self.device, &self.config);
                 return;
             }
             Err(e) => {
@@ -144,9 +143,11 @@ impl Renderer for ManifoldApp {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -163,12 +164,18 @@ impl Renderer for ManifoldApp {
                 occlusion_query_set: None,
                 depth_stencil_attachment: None,
             });
-            
-            render_pass.set_pipeline(self.render_pipeline.as_ref().unwrap());
+
+            render_pass.set_pipeline(&self.render_pipeline);
             render_pass.draw(0..3, 0..1);
         }
 
-        queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
         frame.present();
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
     }
 }

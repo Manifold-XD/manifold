@@ -817,6 +817,7 @@ dependencies = [
 name = "manifold"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "env_logger",
  "log",
  "pollster",
