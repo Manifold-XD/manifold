@@ -1,3 +1,7 @@
+mod vertex;
+use vertex::{Vertex, TRIANGLE};
+
+use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use std::sync::Arc;
@@ -8,6 +12,8 @@ pub struct Renderer<'a> {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl<'a> Renderer<'a> {
@@ -64,7 +70,7 @@ impl<'a> Renderer<'a> {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("../shaders/triangle.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("../shaders/basic.wgsl"));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -79,7 +85,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -111,12 +117,21 @@ impl<'a> Renderer<'a> {
             cache: None,
         });
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertex::TRIANGLE),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let num_vertices = TRIANGLE.len() as u32;
+
         Self {
             surface: surface,
             device: device,
             queue: queue,
             config: config,
             render_pipeline: render_pipeline,
+            vertex_buffer: vertex_buffer,
+            num_vertices: num_vertices,
         }
     }
 
@@ -156,7 +171,7 @@ impl<'a> Renderer<'a> {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -166,7 +181,8 @@ impl<'a> Renderer<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(Some(encoder.finish()));
