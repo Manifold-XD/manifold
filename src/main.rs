@@ -2,6 +2,7 @@ mod app;
 use app::ManifoldApp;
 
 mod renderer;
+mod util;
 
 use winit::event_loop::EventLoop;
 
