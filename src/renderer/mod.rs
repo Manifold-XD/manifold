@@ -1,5 +1,5 @@
 mod vertex;
-use vertex::{Vertex, TRIANGLE};
+use vertex::{Vertex, PENTAGON_INDICES, PENTAGON_VERTICES};
 
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -13,7 +13,8 @@ pub struct Renderer<'a> {
     pub config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
 impl<'a> Renderer<'a> {
@@ -119,10 +120,15 @@ impl<'a> Renderer<'a> {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(vertex::TRIANGLE),
+            contents: bytemuck::cast_slice(PENTAGON_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let num_vertices = TRIANGLE.len() as u32;
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(PENTAGON_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_indices = PENTAGON_INDICES.len() as u32;
 
         Self {
             surface: surface,
@@ -131,7 +137,8 @@ impl<'a> Renderer<'a> {
             config: config,
             render_pipeline: render_pipeline,
             vertex_buffer: vertex_buffer,
-            num_vertices: num_vertices,
+            index_buffer: index_buffer,
+            num_indices: num_indices,
         }
     }
 
@@ -182,7 +189,8 @@ impl<'a> Renderer<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         self.queue.submit(Some(encoder.finish()));
