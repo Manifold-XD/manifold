@@ -1,7 +1,7 @@
-use cgmath::{Matrix4, Point3, Quaternion, Vector2, Vector3, Deg};
+use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Rotation3, Vector3};
 use winit::{
     event::{ElementState, KeyEvent},
-    keyboard::Key,
+    keyboard::{KeyCode, PhysicalKey},
 };
 
 #[rustfmt::skip]
@@ -12,6 +12,7 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
     0.0, 0.0, 0.5, 1.0,
 );
 
+#[rustfmt::skip]
 fn perspective_lh(fovy: Deg<f32>, aspect: f32, near: f32, far: f32) -> Matrix4<f32> {
     let f = 1.0 / (fovy.0.to_radians() / 2.0).tan();
     Matrix4::new(
@@ -63,33 +64,41 @@ impl CameraUniform {
 
 pub struct CameraController {
     speed: f32,
+    look_around: bool,
     direction_inputs: [bool; 4],
+    mouse_delta: (f64, f64),
 }
 
 impl CameraController {
     pub fn new() -> Self {
         Self {
             speed: 1.0,
+            look_around: false,
             direction_inputs: [false; 4],
+            mouse_delta: (0.0, 0.0),
         }
     }
 
     pub fn process_input_events(&mut self, event: &KeyEvent) -> bool {
         let is_pressed = event.state == ElementState::Pressed;
-        match event.logical_key.as_ref() {
-            Key::Character("w") => {
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::ShiftLeft) => {
+                self.look_around = is_pressed;
+                true
+            }
+            PhysicalKey::Code(KeyCode::KeyW) => {
                 self.direction_inputs[0] = is_pressed;
                 true
             }
-            Key::Character("s") => {
+            PhysicalKey::Code(KeyCode::KeyS) => {
                 self.direction_inputs[1] = is_pressed;
                 true
             }
-            Key::Character("a") => {
+            PhysicalKey::Code(KeyCode::KeyA) => {
                 self.direction_inputs[2] = is_pressed;
                 true
             }
-            Key::Character("d") => {
+            PhysicalKey::Code(KeyCode::KeyD) => {
                 self.direction_inputs[3] = is_pressed;
                 true
             }
@@ -97,32 +106,49 @@ impl CameraController {
         }
     }
 
+    pub fn process_mouse_delta(&mut self, delta: (f64, f64)) {
+        if !self.look_around {
+            return;
+        }
+        self.mouse_delta.0 += delta.0;
+        self.mouse_delta.1 -= delta.1;
+    }
+
+    // ##!! BUG if moving with shift, key freezes
     pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
         use cgmath::InnerSpace;
 
-        let mut move_direction: Vector2<f32> = Vector2::new(0.0, 0.0);
+        let mut local_move_direction: Vector3<f32> = Vector3::new(0.0, 0.0, 0.0);
 
         if self.direction_inputs[0] {
-            move_direction.y += 1.0;
+            local_move_direction.z += 1.0;
         }
         if self.direction_inputs[1] {
-            move_direction.y -= 1.0;
+            local_move_direction.z -= 1.0;
         }
         if self.direction_inputs[2] {
-            move_direction.x -= 1.0;
+            local_move_direction.x -= 1.0;
         }
         if self.direction_inputs[3] {
-            move_direction.x += 1.0;
+            local_move_direction.x += 1.0;
         }
 
-        if move_direction.magnitude2() > 1.0 {
-            move_direction = move_direction.normalize();
+        if local_move_direction.magnitude2() > 0.0 {
+            local_move_direction = local_move_direction.normalize();
+            let movement = camera.orientation * local_move_direction * self.speed * delta_time;
+            camera.position += movement;
         }
 
-        let forward = camera.orientation * Vector3::unit_z();
-        let right = camera.orientation * Vector3::unit_x();
+        let mouse_sensitivity = 0.5 / 1000.0;
+        let delta_yaw = Rad((self.mouse_delta.0 as f32) * mouse_sensitivity);
+        let delta_pitch = Rad((self.mouse_delta.1 as f32) * mouse_sensitivity);
 
-        camera.position += forward * move_direction.y * self.speed * delta_time;
-        camera.position += right * move_direction.x * self.speed * delta_time;
+        self.mouse_delta = (0.0, 0.0);
+
+        let yaw_rotation = Quaternion::from_angle_y(-delta_yaw);
+        let pitch_rotation = Quaternion::from_angle_x(-delta_pitch);
+
+        camera.orientation = (yaw_rotation * camera.orientation) * pitch_rotation;
+        camera.orientation = camera.orientation.normalize();
     }
 }

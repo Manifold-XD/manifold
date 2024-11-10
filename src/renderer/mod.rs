@@ -381,7 +381,11 @@ impl<'a> Renderer<'a> {
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn handle_camera_input(&mut self, key_event: winit::event::KeyEvent) {
+    pub fn handle_camera_movement(&mut self, key_event: winit::event::KeyEvent) {
         self.camera_controller.process_input_events(&key_event);
+    }
+
+    pub fn handle_mouse_delta(&mut self, delta: (f64, f64)) {
+        self.camera_controller.process_mouse_delta(delta);
     }
 }

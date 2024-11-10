@@ -9,6 +9,7 @@ pub struct ManifoldApp {
     window: Option<Arc<Window>>,
     size: PhysicalSize<u32>,
     renderer: Option<Renderer<'static>>,
+    cursor_position: Option<(f64, f64)>,
 }
 
 impl ManifoldApp {
@@ -17,6 +18,7 @@ impl ManifoldApp {
             window: None,
             size: PhysicalSize::new(0, 0),
             renderer: None,
+            cursor_position: None,
         }
     }
 }
