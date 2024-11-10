@@ -10,7 +10,7 @@ use log::{debug, info, warn};
 
 pub trait EventHandler {
     fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent);
-    fn handle_keyboard_input(&mut self, event_loop: &ActiveEventLoop, key: &Key);
+    fn handle_keyboard_input(&mut self, event_loop: &ActiveEventLoop, key_event: KeyEvent);
 }
 
 impl EventHandler for ManifoldApp {
@@ -28,30 +28,38 @@ impl EventHandler for ManifoldApp {
                 let scaled_height = (self.size.height as f64 * scale_factor).floor() as u32;
                 self.resize(scaled_width, scaled_height);
             }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        logical_key: key,
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } => self.handle_keyboard_input(event_loop, &key),
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.handle_keyboard_input(event_loop, event);
+            }
             WindowEvent::RedrawRequested => {
+                self.window.as_ref().unwrap().request_redraw();
                 self.renderer.as_mut().unwrap().render();
             }
             _ => (),
         }
     }
 
-    fn handle_keyboard_input(&mut self, event_loop: &ActiveEventLoop, key: &Key) {
-        match key.as_ref() {
+    fn handle_keyboard_input(&mut self, event_loop: &ActiveEventLoop, key_event: KeyEvent) {
+        match key_event.logical_key.as_ref() {
             Key::Named(NamedKey::Space) => {
-                info!("Space!");
+                if key_event.state == ElementState::Pressed {
+                    info!("Space!");
+                }
             }
             Key::Named(NamedKey::Escape) => {
-                warn!("Escape pressed, exiting the application.");
-                event_loop.exit();
+                if key_event.state == ElementState::Pressed {
+                    warn!("Escape pressed, exiting the application.");
+                    event_loop.exit();
+                }
+            }
+            Key::Character("w")
+            | Key::Character("s")
+            | Key::Character("a")
+            | Key::Character("d") => {
+                self.renderer
+                    .as_mut()
+                    .unwrap()
+                    .handle_camera_input(key_event);
             }
             _ => (),
         }
