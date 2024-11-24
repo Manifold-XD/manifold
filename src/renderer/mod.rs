@@ -379,6 +379,7 @@ impl<'a> Renderer<'a> {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
+        self.camera.aspect = self.config.width as f32 / self.config.height as f32;
     }
 
     pub fn handle_camera_movement(&mut self, key_event: winit::event::KeyEvent) {
