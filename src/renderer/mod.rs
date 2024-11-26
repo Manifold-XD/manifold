@@ -1,15 +1,20 @@
-mod vertex;
-use vertex::{Vertex, PENTAGON_INDICES, PENTAGON_VERTICES};
+mod util;
+use crate::res_path;
+use texture::Texture;
+use util::resources;
+
+pub mod model;
+use model::{DrawModel, Vertex};
+
+pub mod texture;
 
 mod camera;
 use camera::{Camera, CameraController, CameraUniform};
 
-use crate::res_path;
-
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 pub struct Renderer<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -17,15 +22,13 @@ pub struct Renderer<'a> {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
+    depth_texture: Texture,
     camera: Camera,
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
     camera_bind_group: wgpu::BindGroup,
     camera_buffer: wgpu::Buffer,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    diffuse_bind_group: wgpu::BindGroup,
+    obj_model: model::Model,
 }
 
 impl<'a> Renderer<'a> {
@@ -86,10 +89,10 @@ impl<'a> Renderer<'a> {
         // Camera setup
         use cgmath::Rotation3;
         let camera = Camera {
-            position: cgmath::Point3::new(0.0, 0.0, -2.0),
+            position: cgmath::Point3::new(0.0, 2.0, 10.0),
             orientation: cgmath::Quaternion::from_axis_angle(
-                cgmath::Vector3::unit_y(),
-                cgmath::Deg(0.0),
+                cgmath::Vector3::unit_x(),
+                cgmath::Deg(-10.0),
             ),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
@@ -133,58 +136,6 @@ impl<'a> Renderer<'a> {
             label: Some("camera_bind_group"),
         });
 
-        // Texture setup
-        let diffuse_bytes = include_bytes!(res_path!("textures/rickroll.jpg"));
-        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_image.to_rgba8();
-
-        use image::GenericImageView;
-        let dimensions = diffuse_image.dimensions();
-
-        let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
-            depth_or_array_layers: 1,
-        };
-        let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("diffuse_texture"),
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &diffuse_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &diffuse_rgba,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
-            },
-            texture_size,
-        );
-
-        let diffuse_texture_view =
-            diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::MirrorRepeat,
-            address_mode_v: wgpu::AddressMode::MirrorRepeat,
-            address_mode_w: wgpu::AddressMode::MirrorRepeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -208,20 +159,9 @@ impl<'a> Renderer<'a> {
                 label: Some("texture_bind_group_layout"),
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
+        // depth
+        let depth_texture =
+            texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
         // Shader setup
         let shader =
@@ -241,7 +181,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[model::ModelVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -258,13 +198,18 @@ impl<'a> Renderer<'a> {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                // cull_mode: Some(wgpu::Face::Back),
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -274,18 +219,11 @@ impl<'a> Renderer<'a> {
             cache: None,
         });
 
-        // Buffers setup
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(PENTAGON_VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(PENTAGON_INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        let num_indices = PENTAGON_INDICES.len() as u32;
+        let obj_path = Path::new("models/cube.obj").to_path_buf();
+        let obj_model =
+            resources::load_model(&obj_path, &device, &queue, &texture_bind_group_layout)
+                .await
+                .unwrap();
 
         Self {
             surface: surface,
@@ -293,15 +231,13 @@ impl<'a> Renderer<'a> {
             queue: queue,
             config: config,
             render_pipeline: render_pipeline,
+            depth_texture: depth_texture,
             camera: camera,
             camera_controller: camera_controller,
             camera_uniform: camera_uniform,
             camera_bind_group: camera_bind_group,
             camera_buffer: camera_buffer,
-            vertex_buffer: vertex_buffer,
-            index_buffer: index_buffer,
-            num_indices: num_indices,
-            diffuse_bind_group: diffuse_bind_group,
+            obj_model: obj_model,
         }
     }
 
@@ -360,15 +296,19 @@ impl<'a> Renderer<'a> {
                 })],
                 timestamp_writes: None,
                 occlusion_query_set: None,
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
+            render_pass.set_vertex_buffer(0, self.obj_model.meshes[0].vertex_buffer.slice(..));
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.draw_model(&self.obj_model, &self.camera_bind_group);
         }
 
         self.queue.submit(Some(encoder.finish()));
@@ -380,6 +320,8 @@ impl<'a> Renderer<'a> {
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
         self.camera.aspect = self.config.width as f32 / self.config.height as f32;
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
     pub fn handle_camera_movement(&mut self, key_event: winit::event::KeyEvent) {

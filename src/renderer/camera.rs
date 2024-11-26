@@ -1,4 +1,4 @@
-use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Rotation3, Vector3};
+use cgmath::{perspective, Matrix4, Point3, Quaternion, Rad, Rotation3, Vector3};
 use winit::{
     event::{ElementState, KeyEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -7,21 +7,10 @@ use winit::{
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
     1.0, 0.0, 0.0, 0.0,
-    0.0, -1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
     0.0, 0.0, 0.5, 0.0,
     0.0, 0.0, 0.5, 1.0,
 );
-
-#[rustfmt::skip]
-fn perspective_lh(fovy: Deg<f32>, aspect: f32, near: f32, far: f32) -> Matrix4<f32> {
-    let f = 1.0 / (fovy.0.to_radians() / 2.0).tan();
-    Matrix4::new(
-        f / aspect, 0.0, 0.0, 0.0,
-        0.0, f, 0.0, 0.0,
-        0.0, 0.0, far / (far - near), 1.0,
-        0.0, 0.0, -near * far / (far - near), 0.0,
-    )
-}
 
 pub struct Camera {
     pub position: Point3<f32>,
@@ -35,9 +24,9 @@ pub struct Camera {
 
 impl Camera {
     fn build_view_projection_matrix(&self) -> Matrix4<f32> {
-        let forward = self.orientation * Vector3::unit_z();
-        let view = Matrix4::look_at_lh(self.position, self.position + forward, self.up);
-        let proj = perspective_lh(cgmath::Deg(self.fov), self.aspect, self.near, self.far);
+        let forward = self.orientation * -Vector3::unit_z();
+        let view = Matrix4::look_at_rh(self.position, self.position + forward, self.up);
+        let proj = perspective(cgmath::Deg(self.fov), self.aspect, self.near, self.far);
 
         OPENGL_TO_WGPU_MATRIX * proj * view
     }
@@ -111,20 +100,19 @@ impl CameraController {
             return;
         }
         self.mouse_delta.0 += delta.0;
-        self.mouse_delta.1 -= delta.1;
+        self.mouse_delta.1 += delta.1;
     }
 
-    // ##!! BUG if moving with shift, key freezes
     pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
         use cgmath::InnerSpace;
 
         let mut local_move_direction: Vector3<f32> = Vector3::new(0.0, 0.0, 0.0);
 
         if self.direction_inputs[0] {
-            local_move_direction.z += 1.0;
+            local_move_direction.z -= 1.0;
         }
         if self.direction_inputs[1] {
-            local_move_direction.z -= 1.0;
+            local_move_direction.z += 1.0;
         }
         if self.direction_inputs[2] {
             local_move_direction.x -= 1.0;
@@ -139,7 +127,7 @@ impl CameraController {
             camera.position += movement;
         }
 
-        let mouse_sensitivity = 0.5 / 1000.0;
+        let mouse_sensitivity = 1.0 / 1000.0;
         let delta_yaw = Rad((self.mouse_delta.0 as f32) * mouse_sensitivity);
         let delta_pitch = Rad((self.mouse_delta.1 as f32) * mouse_sensitivity);
 

@@ -1,0 +1,6 @@
+# Graphics
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+
+# Models
+*.obj filter=lfs diff=lfs merge=lfs -text
