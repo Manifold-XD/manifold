@@ -115,12 +115,14 @@ where
     }
 }
 
+#[allow(dead_code)]
 pub struct Material {
     pub name: String,
     pub diffuse_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
 }
 
+#[allow(dead_code)]
 pub struct Mesh {
     pub name: String,
     pub vertex_buffer: wgpu::Buffer,
