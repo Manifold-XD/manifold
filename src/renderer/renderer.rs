@@ -1,12 +1,10 @@
-use super::util::resources;
-
 use super::camera::Camera;
 use super::context;
-use super::model::{DrawModel, Model};
+use super::object::{DrawObject, ObjectManager};
 use super::pipeline;
 use super::texture::TexturePool;
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 use winit::window::Window;
 
 pub struct Renderer {
@@ -14,7 +12,7 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     camera: Camera,
     texture_pool: TexturePool,
-    obj_model: Model,
+    object_manager: ObjectManager,
 }
 
 impl Renderer {
@@ -28,23 +26,15 @@ impl Renderer {
             &context,
             &[&camera.bind_group_layout, &texture_pool.bind_group_layout],
         );
-
-        let obj_path = Path::new("models/cube.obj").to_path_buf();
-        let obj_model = resources::load_model(
-            &obj_path,
-            &context.device,
-            &context.queue,
-            &texture_pool.bind_group_layout,
-        )
-        .await
-        .unwrap();
+        
+        let object_manager = ObjectManager::new(&context, &texture_pool).await;
 
         Self {
             context: context,
             pipeline: pipeline,
             camera: camera,
             texture_pool: texture_pool,
-            obj_model: obj_model,
+            object_manager: object_manager,
         }
     }
 
@@ -117,9 +107,10 @@ impl Renderer {
                 }),
             });
 
-            render_pass.set_vertex_buffer(0, self.obj_model.meshes[0].vertex_buffer.slice(..));
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.draw_model(&self.obj_model, &self.camera.bind_group);
+            for object in self.object_manager.iter() {
+                render_pass.draw_object(object, &self.camera.bind_group);
+            }
         }
 
         self.context.queue.submit(Some(encoder.finish()));

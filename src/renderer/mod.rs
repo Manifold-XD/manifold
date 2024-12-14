@@ -1,10 +1,11 @@
 pub mod util;
 
-pub mod context;
-pub mod pipeline;
 pub mod camera;
-pub mod texture;
+pub mod context;
 pub mod model;
+pub mod object;
+pub mod pipeline;
+pub mod texture;
 
 pub mod renderer; 
 pub use renderer::Renderer;
