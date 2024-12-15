@@ -22,12 +22,16 @@ impl Renderer {
         let camera: Camera = Camera::new(&context.device, &context.config);
         let texture_pool = TexturePool::new(&context);
 
+        let object_manager = ObjectManager::new(&context, &texture_pool).await;
+
         let pipeline = pipeline::init_pipeline(
             &context,
-            &[&camera.bind_group_layout, &texture_pool.bind_group_layout],
+            &[
+                &camera.bind_group_layout,
+                &texture_pool.bind_group_layout,
+                &object_manager.bind_group_layout,
+            ],
         );
-        
-        let object_manager = ObjectManager::new(&context, &texture_pool).await;
 
         Self {
             context: context,
