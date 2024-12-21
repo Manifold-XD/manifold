@@ -82,9 +82,11 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, queue: &wgpu::Queue) {
         self.controller.update_eye(&mut self.eye, 0.016);
         self.uniform.update_view_proj(&self.eye);
+
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 }
 

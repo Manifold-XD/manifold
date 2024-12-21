@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::PathBuf;
 
-use cgmath::Rotation3;
+use cgmath::{Deg, Matrix4, Quaternion, Rotation3, SquareMatrix, Vector3};
 use wgpu::util::DeviceExt;
 
 use super::{
@@ -16,11 +16,33 @@ pub struct TransformUniform {
     matrix: [[f32; 4]; 4],
 }
 
+impl TransformUniform {
+    pub fn new() -> Self {
+        Self {
+            matrix: Matrix4::identity().into(),
+        }
+    }
+
+    pub fn calculate(
+        &mut self,
+        position: Vector3<f32>,
+        rotation: Quaternion<f32>,
+        scale: Vector3<f32>,
+    ) {
+        self.matrix = (Matrix4::from_translation(position)
+            * Matrix4::from(rotation)
+            * Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z))
+        .into();
+    }
+}
+
 #[allow(dead_code)]
 pub struct Object {
     model: Model,
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
+    position: Vector3<f32>,
+    rotation: Quaternion<f32>,
+    scale: Vector3<f32>,
+    transform_uniform: TransformUniform,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
 }
@@ -28,19 +50,18 @@ pub struct Object {
 impl Object {
     pub fn new(
         model: Model,
-        position: cgmath::Vector3<f32>,
-        rotation: cgmath::Quaternion<f32>,
+        position: Vector3<f32>,
+        rotation: Quaternion<f32>,
+        scale: Vector3<f32>,
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let uniform = TransformUniform {
-            matrix: (cgmath::Matrix4::from_translation(position) * cgmath::Matrix4::from(rotation))
-                .into(),
-        };
+        let mut transform_uniform = TransformUniform::new();
+        transform_uniform.calculate(position, rotation, scale);
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Object Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniform]),
+            contents: bytemuck::cast_slice(&[transform_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -57,9 +78,42 @@ impl Object {
             model,
             position,
             rotation,
+            scale,
+            transform_uniform,
             uniform_buffer,
             bind_group,
         }
+    }
+
+    pub async fn from_model_path(
+        model_path: &PathBuf,
+        context: &Context<'_>,
+        material_store: &mut MaterialStore,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let model = load_model(model_path, &context.device, material_store)
+            .await
+            .unwrap();
+
+        Self::new(
+            model,
+            Vector3::new(0.0, 0.0, 0.0),
+            Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0)),
+            Vector3::new(1.0, 1.0, 1.0),
+            &context.device,
+            &bind_group_layout,
+        )
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.transform_uniform
+            .calculate(self.position, self.rotation, self.scale);
+
+        queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.transform_uniform]),
+        );
     }
 }
 
@@ -129,11 +183,6 @@ pub struct ObjectManager {
 #[allow(dead_code)]
 impl<'a> ObjectManager {
     pub async fn new(context: &'a Context<'a>, material_store: &'a mut MaterialStore) -> Self {
-        let obj_path = Path::new("models/plane.obj").to_path_buf();
-        let obj_model = load_model(&obj_path, &context.device, material_store)
-            .await
-            .unwrap();
-
         let bind_group_layout =
             context
                 .device
@@ -148,21 +197,28 @@ impl<'a> ObjectManager {
                         },
                         count: None,
                     }],
-                    label: Some("object_bind_group_layout"),
+                    label: None,
                 });
 
-        let immutable_objects = [Object::new(
-            obj_model,
-            cgmath::Vector3::new(0.0, 0.0, 0.0),
-            cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
-            &context.device,
+        let mut grid = Object::from_model_path(
+            &PathBuf::from("models/plane.obj"),
+            context,
+            material_store,
             &bind_group_layout,
-        )];
+        )
+        .await;
+        grid.scale = Vector3::new(100.0, 100.0, 100.0);
+        // let cube = Object::from_model_path(
+        //     &PathBuf::from("models/cube.obj"),
+        //     context,
+        //     material_store,
+        //     &bind_group_layout,
+        // ).await;
 
         Self {
             bind_group_layout: bind_group_layout,
             actors: Vec::new(),
-            immutable_objects: immutable_objects,
+            immutable_objects: [grid],
         }
     }
 
@@ -182,5 +238,11 @@ impl<'a> ObjectManager {
         self.immutable_objects
             .iter_mut()
             .chain(self.actors.iter_mut())
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        for object in self.iter_mut() {
+            object.update(queue);
+        }
     }
 }

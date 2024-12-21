@@ -55,12 +55,8 @@ impl Renderer {
     }
 
     fn update(&mut self) {
-        self.camera.update();
-        self.context.queue.write_buffer(
-            &self.camera.buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera.uniform]),
-        );
+        self.camera.update(&self.context.queue);
+        self.object_manager.update(&self.context.queue);
     }
 
     pub fn render(&mut self) {

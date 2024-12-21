@@ -33,7 +33,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 // ---- Adjustable parameters ----
 const GRID_SPACING: f32 = 1.0; 
 const MAJOR_GRID_SPACING: f32 = 10.0;
-const FADE_DISTANCE: f32 = 1000.0;
+const FADE_DISTANCE: f32 = 100.0;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
