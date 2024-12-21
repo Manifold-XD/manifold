@@ -16,14 +16,32 @@ pub struct MaterialStore {
 
 impl MaterialStore {
     pub fn new() -> Self {
+        let default_material = Material {
+            name: ShaderType::Basic.to_string(),
+            shader_type: ShaderType::Basic,
+            diffuse_texture_id: 0,
+        };
+        let basic_material = Material {
+            name: ShaderType::Basic.to_string(),
+            shader_type: ShaderType::Basic,
+            diffuse_texture_id: 0,
+        };
+        let grid_material = Material {
+            name: ShaderType::Grid.to_string(),
+            shader_type: ShaderType::Grid,
+            diffuse_texture_id: 0,
+        };
+
+        let materials: HashMap<u32, Material> = vec![(0, basic_material), (1, grid_material)]
+            .into_iter()
+            .collect();
+
+        let next_id = materials.len() as u32 + 1;
+
         Self {
-            default_material: Material {
-                name: "Default".to_string(),
-                shader_type: ShaderType::Grid,
-                diffuse_texture_id: 0,
-            },
-            materials: HashMap::new(),
-            next_id: 0,
+            default_material,
+            materials,
+            next_id,
         }
     }
 

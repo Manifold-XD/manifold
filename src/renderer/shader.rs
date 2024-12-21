@@ -1,3 +1,5 @@
+use std::fmt;
+
 use super::context;
 use crate::res_path;
 
@@ -6,6 +8,16 @@ pub enum ShaderType {
     Grid,
     Basic,
     Hyper,
+}
+
+impl fmt::Display for ShaderType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ShaderType::Grid => write!(f, "grid"),
+            ShaderType::Basic => write!(f, "basic"),
+            ShaderType::Hyper => write!(f, "hyper"),
+        }
+    }
 }
 
 pub struct ShaderStore {
@@ -21,7 +33,7 @@ impl ShaderStore {
             .create_shader_module(wgpu::include_wgsl!(res_path!("shaders/editor_grid.wgsl")));
         let basic = context
             .device
-            .create_shader_module(wgpu::include_wgsl!(res_path!("shaders/editor_grid.wgsl")));
+            .create_shader_module(wgpu::include_wgsl!(res_path!("shaders/basic.wgsl")));
         let hyper = context
             .device
             .create_shader_module(wgpu::include_wgsl!(res_path!("shaders/hyper.wgsl")));

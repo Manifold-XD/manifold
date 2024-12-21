@@ -7,6 +7,8 @@ use super::{
     context::Context,
     material::MaterialStore,
     model::{load_model, Mesh, Model},
+    pipeline::PipelineStore,
+    shader::ShaderType,
     texture::TextureStore,
 };
 
@@ -117,6 +119,19 @@ impl Object {
     }
 }
 
+fn deduce_pipeline<'a>(
+    material_id: u32,
+    material_store: &'a MaterialStore,
+    pipeline_store: &'a PipelineStore,
+) -> &'a wgpu::RenderPipeline {
+    let material = material_store.get_material(material_id);
+    match material.shader_type {
+        ShaderType::Basic => &pipeline_store.basic,
+        ShaderType::Grid => &pipeline_store.grid,
+        ShaderType::Hyper => &pipeline_store.hyper,
+    }
+}
+
 pub trait DrawObject<'a> {
     fn draw_mesh(
         &mut self,
@@ -131,6 +146,7 @@ pub trait DrawObject<'a> {
         camera_bind_group: &'a wgpu::BindGroup,
         material_store: &'a MaterialStore,
         texture_store: &'a TextureStore,
+        pipeline_store: &'a PipelineStore,
     );
 }
 
@@ -159,11 +175,17 @@ where
         camera_bind_group: &'a wgpu::BindGroup,
         material_store: &'a MaterialStore,
         texture_store: &'a TextureStore,
+        pipeline_store: &'a PipelineStore,
     ) {
         for data in &object.model.data {
             let mesh = &data.mesh;
             let material = material_store.get_material(data.material_id);
             let diffuse = texture_store.get_texture(material.diffuse_texture_id);
+            self.set_pipeline(deduce_pipeline(
+                data.material_id,
+                material_store,
+                pipeline_store,
+            ));
             self.draw_mesh(
                 mesh,
                 camera_bind_group,
@@ -208,12 +230,7 @@ impl<'a> ObjectManager {
         )
         .await;
         grid.scale = Vector3::new(100.0, 100.0, 100.0);
-        // let cube = Object::from_model_path(
-        //     &PathBuf::from("models/cube.obj"),
-        //     context,
-        //     material_store,
-        //     &bind_group_layout,
-        // ).await;
+        grid.model.data[0].material_id = 1;
 
         Self {
             bind_group_layout: bind_group_layout,
@@ -230,14 +247,26 @@ impl<'a> ObjectManager {
         self.actors.remove(index);
     }
 
+    pub async fn create_actor(
+        &mut self,
+        model_path: &PathBuf,
+        context: &Context<'_>,
+        material_store: &mut MaterialStore,
+    ) {
+        let actor =
+            Object::from_model_path(model_path, context, material_store, &self.bind_group_layout)
+                .await;
+        self.add_actor(actor);
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Object> {
-        self.immutable_objects.iter().chain(self.actors.iter())
+        self.actors.iter().chain(self.immutable_objects.iter())
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Object> {
-        self.immutable_objects
+        self.actors
             .iter_mut()
-            .chain(self.actors.iter_mut())
+            .chain(self.immutable_objects.iter_mut())
     }
 
     pub fn update(&mut self, queue: &wgpu::Queue) {

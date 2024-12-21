@@ -32,7 +32,8 @@ impl Renderer {
             .load_texture_from_file(PathBuf::from("textures/rickroll.jpg"), &context)
             .await;
         let mut material_store = MaterialStore::new();
-        let object_manager = ObjectManager::new(&context, &mut material_store).await;
+        let mut object_manager = ObjectManager::new(&context, &mut material_store).await;
+
         let pipeline_store = PipelineStore::new(
             &context,
             &shader_store,
@@ -42,6 +43,14 @@ impl Renderer {
                 &object_manager.bind_group_layout,
             ],
         );
+
+        object_manager
+            .create_actor(
+                &PathBuf::from("models/cube.obj"),
+                &context,
+                &mut material_store,
+            )
+            .await;
 
         Self {
             context,
@@ -124,13 +133,14 @@ impl Renderer {
                 }),
             });
 
-            render_pass.set_pipeline(&self.pipeline_store.basic);
             for object in self.object_manager.iter() {
+                render_pass.set_pipeline(&self.pipeline_store.basic);
                 render_pass.draw_object(
                     object,
                     &self.camera.bind_group,
                     &self.material_store,
                     &self.texture_store,
+                    &self.pipeline_store,
                 );
             }
         }
