@@ -19,7 +19,7 @@ impl MaterialStore {
         Self {
             default_material: Material {
                 name: "Default".to_string(),
-                shader_type: ShaderType::Basic,
+                shader_type: ShaderType::Grid,
                 diffuse_texture_id: 0,
             },
             materials: HashMap::new(),

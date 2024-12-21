@@ -5,7 +5,7 @@ use super::{
     texture::Texture,
 };
 
-pub fn init_pipeline(
+fn init_pipeline(
     context: &Context,
     bind_group_layouts: &[&wgpu::BindGroupLayout],
     shader: &wgpu::ShaderModule,
@@ -35,7 +35,7 @@ pub fn init_pipeline(
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -44,7 +44,7 @@ pub fn init_pipeline(
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None, // Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
@@ -70,6 +70,7 @@ pub fn init_pipeline(
 
 #[allow(unused)]
 pub struct PipelineStore {
+    pub grid: wgpu::RenderPipeline,
     pub basic: wgpu::RenderPipeline,
     pub hyper: wgpu::RenderPipeline,
 }
@@ -80,9 +81,10 @@ impl PipelineStore {
         shader_store: &ShaderStore,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
     ) -> Self {
+        let grid = init_pipeline(context, bind_group_layouts, &shader_store.grid);
         let basic = init_pipeline(context, bind_group_layouts, &shader_store.basic);
         let hyper = init_pipeline(context, bind_group_layouts, &shader_store.hyper);
 
-        Self { basic, hyper }
+        Self { grid, basic, hyper }
     }
 }

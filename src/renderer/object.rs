@@ -129,7 +129,7 @@ pub struct ObjectManager {
 #[allow(dead_code)]
 impl<'a> ObjectManager {
     pub async fn new(context: &'a Context<'a>, material_store: &'a mut MaterialStore) -> Self {
-        let obj_path = Path::new("models/cube.obj").to_path_buf();
+        let obj_path = Path::new("models/plane.obj").to_path_buf();
         let obj_model = load_model(&obj_path, &context.device, material_store)
             .await
             .unwrap();
