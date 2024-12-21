@@ -1,4 +1,7 @@
-use cgmath::{perspective, Matrix4, Point3, Quaternion, Rad, Rotation3, Vector3};
+use cgmath::{
+    perspective, Deg, InnerSpace, Matrix4, Point3, Quaternion, Rad, Rotation3, SquareMatrix,
+    Vector3,
+};
 use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, Buffer};
 use winit::{
     event::{ElementState, KeyEvent},
@@ -24,14 +27,11 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        use cgmath::Rotation3;
         let eye = CameraEye {
-            position: cgmath::Point3::new(0.0, 2.0, 10.0),
-            orientation: cgmath::Quaternion::from_axis_angle(
-                cgmath::Vector3::unit_x(),
-                cgmath::Deg(-10.0),
-            ),
-            up: cgmath::Vector3::unit_y(),
+            position: Point3::new(5.0, 2.0, 5.0),
+            orientation: Quaternion::from_axis_angle(Vector3::unit_y(), Deg(45.0))
+                * Quaternion::from_axis_angle(Vector3::unit_x(), Deg(-15.0)),
+            up: Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
             fov: 45.0,
             near: 0.1,
@@ -104,7 +104,7 @@ impl CameraEye {
     fn build_view_projection_matrix(&self) -> Matrix4<f32> {
         let forward = self.orientation * -Vector3::unit_z();
         let view = Matrix4::look_at_rh(self.position, self.position + forward, self.up);
-        let proj = perspective(cgmath::Deg(self.fov), self.aspect, self.near, self.far);
+        let proj = perspective(Deg(self.fov), self.aspect, self.near, self.far);
 
         OPENGL_TO_WGPU_MATRIX * proj * view
     }
@@ -118,7 +118,7 @@ pub struct CameraUniform {
 
 impl CameraUniform {
     pub fn new() -> Self {
-        use cgmath::SquareMatrix;
+        use SquareMatrix;
         Self {
             view_proj: Matrix4::identity().into(),
         }
@@ -183,7 +183,7 @@ impl CameraController {
     }
 
     pub fn update_eye(&mut self, eye: &mut CameraEye, delta_time: f32) {
-        use cgmath::InnerSpace;
+        use InnerSpace;
 
         let mut local_move_direction: Vector3<f32> = Vector3::new(0.0, 0.0, 0.0);
 
