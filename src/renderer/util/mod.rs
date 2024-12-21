@@ -1,6 +1,3 @@
-use super::model;
-use super::texture;
-
 #[macro_export]
 macro_rules! res_path {
     ($relative_path:expr) => {

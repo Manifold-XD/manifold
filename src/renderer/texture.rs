@@ -1,14 +1,17 @@
 use super::context::Context;
+use super::util::resources;
 
 use anyhow::Result;
 use image::GenericImageView;
-use wgpu::BindGroupLayout;
 
+use std::{collections::HashMap, path::PathBuf};
+
+#[allow(unused)]
 pub struct Texture {
-    #[allow(unused)]
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+    pub bind_group: Option<wgpu::BindGroup>,
 }
 
 impl Texture {
@@ -17,16 +20,18 @@ impl Texture {
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
         bytes: &[u8],
         label: Option<&str>,
     ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, label)
+        Self::from_image(device, queue, bind_group_layout, &img, label)
     }
 
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
         img: &image::DynamicImage,
         label: Option<&str>,
     ) -> Result<Self> {
@@ -76,10 +81,26 @@ impl Texture {
             ..Default::default()
         });
 
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: None,
+        });
+
         Ok(Self {
             texture,
             view,
             sampler,
+            bind_group: Some(bind_group),
         })
     }
 
@@ -123,16 +144,19 @@ impl Texture {
             texture,
             view,
             sampler,
+            bind_group: None,
         }
     }
 }
 
-pub struct TexturePool {
+pub struct TextureStore {
+    pub bind_group_layout: wgpu::BindGroupLayout,
     pub depth_texture: Texture,
-    pub bind_group_layout: BindGroupLayout,
+    pub textures: HashMap<u32, Texture>,
+    next_id: u32,
 }
 
-impl TexturePool {
+impl TextureStore {
     pub fn new(context: &Context) -> Self {
         let depth_texture = Self::create_depth_texture(context);
 
@@ -164,10 +188,39 @@ impl TexturePool {
         Self {
             depth_texture: depth_texture,
             bind_group_layout: bind_group_layout,
+            textures: HashMap::new(),
+            next_id: 0,
         }
     }
 
     pub fn create_depth_texture(context: &Context) -> Texture {
         Texture::create_depth_texture(&context.device, &context.config, "depth_texture")
+    }
+
+    pub async fn load_texture_from_file(
+        &mut self,
+        relative_path: PathBuf,
+        context: &Context<'_>,
+    ) -> u32 {
+        let path = resources::res_path(&relative_path);
+        let bytes = resources::load_resource(&path).unwrap();
+        let texture = Texture::from_bytes(
+            &context.device,
+            &context.queue,
+            &self.bind_group_layout,
+            &bytes,
+            path.file_name()
+                .expect("No file name in given path")
+                .to_str(),
+        )
+        .unwrap();
+        let id = self.next_id;
+        self.next_id += 1;
+        self.textures.insert(id, texture);
+        id
+    }
+
+    pub fn get_texture(&self, id: u32) -> &Texture {
+        self.textures.get(&id).unwrap()
     }
 }

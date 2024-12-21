@@ -1,18 +1,15 @@
 use super::{
     context::Context,
     model::{ModelVertex, Vertex},
+    shader::ShaderStore,
     texture::Texture,
 };
-use crate::res_path;
 
 pub fn init_pipeline(
     context: &Context,
     bind_group_layouts: &[&wgpu::BindGroupLayout],
+    shader: &wgpu::ShaderModule,
 ) -> wgpu::RenderPipeline {
-    let shader = context
-        .device
-        .create_shader_module(wgpu::include_wgsl!(res_path!("shaders/basic.wgsl")));
-
     let render_pipeline_layout =
         context
             .device
@@ -69,4 +66,23 @@ pub fn init_pipeline(
         });
 
     render_pipeline
+}
+
+#[allow(unused)]
+pub struct PipelineStore {
+    pub basic: wgpu::RenderPipeline,
+    pub hyper: wgpu::RenderPipeline,
+}
+
+impl PipelineStore {
+    pub fn new(
+        context: &Context,
+        shader_store: &ShaderStore,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+    ) -> Self {
+        let basic = init_pipeline(context, bind_group_layouts, &shader_store.basic);
+        let hyper = init_pipeline(context, bind_group_layouts, &shader_store.hyper);
+
+        Self { basic, hyper }
+    }
 }

@@ -1,44 +1,56 @@
 use super::camera::Camera;
 use super::context;
+use super::material::MaterialStore;
 use super::object::{DrawObject, ObjectManager};
-use super::pipeline;
-use super::texture::TexturePool;
+use super::pipeline::PipelineStore;
+use super::shader::ShaderStore;
+use super::texture::TextureStore;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use winit::window::Window;
 
 pub struct Renderer {
     context: context::Context<'static>,
-    pipeline: wgpu::RenderPipeline,
     camera: Camera,
-    texture_pool: TexturePool,
+    #[allow(unused)]
+    shader_store: ShaderStore,
+    texture_store: TextureStore,
+    material_store: MaterialStore,
     object_manager: ObjectManager,
+    pipeline_store: PipelineStore,
 }
 
 impl Renderer {
     pub async fn setup(window: Arc<Window>) -> Self {
         let context = context::init_wgpu(window).await;
 
-        let camera: Camera = Camera::new(&context.device, &context.config);
-        let texture_pool = TexturePool::new(&context);
-
-        let object_manager = ObjectManager::new(&context, &texture_pool).await;
-
-        let pipeline = pipeline::init_pipeline(
+        let camera = Camera::new(&context.device, &context.config);
+        let shader_store = ShaderStore::new(&context);
+        let mut texture_store = TextureStore::new(&context);
+        texture_store
+            .load_texture_from_file(PathBuf::from("textures/rickroll.jpg"), &context)
+            .await;
+        let mut material_store = MaterialStore::new();
+        let object_manager = ObjectManager::new(&context, &mut material_store).await;
+        let pipeline_store = PipelineStore::new(
             &context,
+            &shader_store,
             &[
                 &camera.bind_group_layout,
-                &texture_pool.bind_group_layout,
+                &texture_store.bind_group_layout,
                 &object_manager.bind_group_layout,
             ],
         );
 
         Self {
-            context: context,
-            pipeline: pipeline,
-            camera: camera,
-            texture_pool: texture_pool,
-            object_manager: object_manager,
+            context,
+            camera,
+            shader_store,
+            texture_store,
+            material_store,
+            object_manager,
+            pipeline_store,
         }
     }
 
@@ -102,7 +114,7 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.texture_pool.depth_texture.view,
+                    view: &self.texture_store.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -111,9 +123,14 @@ impl Renderer {
                 }),
             });
 
-            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_pipeline(&self.pipeline_store.basic);
             for object in self.object_manager.iter() {
-                render_pass.draw_object(object, &self.camera.bind_group);
+                render_pass.draw_object(
+                    object,
+                    &self.camera.bind_group,
+                    &self.material_store,
+                    &self.texture_store,
+                );
             }
         }
 
@@ -128,7 +145,7 @@ impl Renderer {
             .surface
             .configure(&self.context.device, &self.context.config);
         self.camera.eye.aspect = width as f32 / height as f32;
-        self.texture_pool.depth_texture = TexturePool::create_depth_texture(&self.context);
+        self.texture_store.depth_texture = TextureStore::create_depth_texture(&self.context);
     }
 
     pub fn handle_camera_movement(&mut self, key_event: winit::event::KeyEvent) {

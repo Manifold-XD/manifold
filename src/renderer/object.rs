@@ -5,9 +5,9 @@ use wgpu::util::DeviceExt;
 
 use super::{
     context::Context,
-    model::{Material, Mesh, Model},
-    texture::TexturePool,
-    util::resources,
+    material::MaterialStore,
+    model::{load_model, Mesh, Model},
+    texture::TextureStore,
 };
 
 #[repr(C)]
@@ -67,11 +67,17 @@ pub trait DrawObject<'a> {
     fn draw_mesh(
         &mut self,
         mesh: &'a Mesh,
-        material: &'a Material,
         camera_bind_group: &'a wgpu::BindGroup,
+        diffuse_bind_group: &'a wgpu::BindGroup,
         translation_bind_group: &'a wgpu::BindGroup,
     );
-    fn draw_object(&mut self, object: &'a Object, camera_bind_group: &'a wgpu::BindGroup);
+    fn draw_object(
+        &mut self,
+        object: &'a Object,
+        camera_bind_group: &'a wgpu::BindGroup,
+        material_store: &'a MaterialStore,
+        texture_store: &'a TextureStore,
+    );
 }
 
 impl<'a, 'b> DrawObject<'b> for wgpu::RenderPass<'a>
@@ -81,22 +87,35 @@ where
     fn draw_mesh(
         &mut self,
         mesh: &'b Mesh,
-        material: &'b Material,
         camera_bind_group: &'b wgpu::BindGroup,
+        diffuse_bind_group: &'b wgpu::BindGroup,
         translation_bind_group: &'b wgpu::BindGroup,
     ) {
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         self.set_bind_group(0, &camera_bind_group, &[]);
-        self.set_bind_group(1, &material.bind_group, &[]);
+        self.set_bind_group(1, &diffuse_bind_group, &[]);
         self.set_bind_group(2, &translation_bind_group, &[]);
         self.draw_indexed(0..mesh.num_elements, 0, 0..1);
     }
 
-    fn draw_object(&mut self, object: &'a Object, camera_bind_group: &'a wgpu::BindGroup) {
-        for mesh in &object.model.meshes {
-            let material = &object.model.materials[mesh.material];
-            self.draw_mesh(mesh, material, camera_bind_group, &object.bind_group);
+    fn draw_object(
+        &mut self,
+        object: &'a Object,
+        camera_bind_group: &'a wgpu::BindGroup,
+        material_store: &'a MaterialStore,
+        texture_store: &'a TextureStore,
+    ) {
+        for data in &object.model.data {
+            let mesh = &data.mesh;
+            let material = material_store.get_material(data.material_id);
+            let diffuse = texture_store.get_texture(material.diffuse_texture_id);
+            self.draw_mesh(
+                mesh,
+                camera_bind_group,
+                diffuse.bind_group.as_ref().unwrap(),
+                &object.bind_group,
+            );
         }
     }
 }
@@ -109,16 +128,11 @@ pub struct ObjectManager {
 
 #[allow(dead_code)]
 impl<'a> ObjectManager {
-    pub async fn new(context: &'a Context<'a>, texture_pool: &'a TexturePool) -> Self {
+    pub async fn new(context: &'a Context<'a>, material_store: &'a mut MaterialStore) -> Self {
         let obj_path = Path::new("models/cube.obj").to_path_buf();
-        let obj_model = resources::load_model(
-            &obj_path,
-            &context.device,
-            &context.queue,
-            &texture_pool.bind_group_layout,
-        )
-        .await
-        .unwrap();
+        let obj_model = load_model(&obj_path, &context.device, material_store)
+            .await
+            .unwrap();
 
         let bind_group_layout =
             context
