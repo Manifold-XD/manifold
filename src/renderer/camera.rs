@@ -1,4 +1,8 @@
-use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Rotation3, Vector3};
+use cgmath::{
+    perspective, Deg, InnerSpace, Matrix4, Point3, Quaternion, Rad, Rotation3, SquareMatrix,
+    Vector3,
+};
+use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, Buffer};
 use winit::{
     event::{ElementState, KeyEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -7,23 +11,86 @@ use winit::{
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
     1.0, 0.0, 0.0, 0.0,
-    0.0, -1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
     0.0, 0.0, 0.5, 0.0,
     0.0, 0.0, 0.5, 1.0,
 );
 
-#[rustfmt::skip]
-fn perspective_lh(fovy: Deg<f32>, aspect: f32, near: f32, far: f32) -> Matrix4<f32> {
-    let f = 1.0 / (fovy.0.to_radians() / 2.0).tan();
-    Matrix4::new(
-        f / aspect, 0.0, 0.0, 0.0,
-        0.0, f, 0.0, 0.0,
-        0.0, 0.0, far / (far - near), 1.0,
-        0.0, 0.0, -near * far / (far - near), 0.0,
-    )
+pub struct Camera {
+    pub eye: CameraEye,
+    pub uniform: CameraUniform,
+    pub controller: CameraController,
+    pub bind_group_layout: BindGroupLayout,
+    pub bind_group: BindGroup,
+    pub buffer: Buffer,
 }
 
-pub struct Camera {
+impl Camera {
+    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+        let eye = CameraEye {
+            position: Point3::new(5.0, 2.0, 5.0),
+            orientation: Quaternion::from_axis_angle(Vector3::unit_y(), Deg(45.0))
+                * Quaternion::from_axis_angle(Vector3::unit_x(), Deg(-15.0)),
+            up: Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fov: 45.0,
+            near: 0.1,
+            far: 100.0,
+        };
+
+        let controller = CameraController::new();
+
+        let mut uniform = CameraUniform::new();
+        uniform.update_view_proj(&eye);
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("bind_group_layout"),
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
+        Self {
+            eye: eye,
+            uniform: uniform,
+            controller: controller,
+            bind_group_layout: bind_group_layout,
+            bind_group: bind_group,
+            buffer: buffer,
+        }
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.controller.update_eye(&mut self.eye, 0.016);
+        self.uniform.update_view_proj(&self.eye);
+
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+    }
+}
+
+pub struct CameraEye {
     pub position: Point3<f32>,
     pub orientation: Quaternion<f32>,
     pub up: Vector3<f32>,
@@ -33,11 +100,11 @@ pub struct Camera {
     pub far: f32,
 }
 
-impl Camera {
+impl CameraEye {
     fn build_view_projection_matrix(&self) -> Matrix4<f32> {
-        let forward = self.orientation * Vector3::unit_z();
-        let view = Matrix4::look_at_lh(self.position, self.position + forward, self.up);
-        let proj = perspective_lh(cgmath::Deg(self.fov), self.aspect, self.near, self.far);
+        let forward = self.orientation * -Vector3::unit_z();
+        let view = Matrix4::look_at_rh(self.position, self.position + forward, self.up);
+        let proj = perspective(Deg(self.fov), self.aspect, self.near, self.far);
 
         OPENGL_TO_WGPU_MATRIX * proj * view
     }
@@ -51,14 +118,15 @@ pub struct CameraUniform {
 
 impl CameraUniform {
     pub fn new() -> Self {
-        use cgmath::SquareMatrix;
+        use SquareMatrix;
         Self {
             view_proj: Matrix4::identity().into(),
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
+    pub fn update_view_proj(&mut self, camera: &CameraEye) {
+        let proj = camera.build_view_projection_matrix();
+        self.view_proj = proj.into();
     }
 }
 
@@ -111,20 +179,19 @@ impl CameraController {
             return;
         }
         self.mouse_delta.0 += delta.0;
-        self.mouse_delta.1 -= delta.1;
+        self.mouse_delta.1 += delta.1;
     }
 
-    // ##!! BUG if moving with shift, key freezes
-    pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
-        use cgmath::InnerSpace;
+    pub fn update_eye(&mut self, eye: &mut CameraEye, delta_time: f32) {
+        use InnerSpace;
 
         let mut local_move_direction: Vector3<f32> = Vector3::new(0.0, 0.0, 0.0);
 
         if self.direction_inputs[0] {
-            local_move_direction.z += 1.0;
+            local_move_direction.z -= 1.0;
         }
         if self.direction_inputs[1] {
-            local_move_direction.z -= 1.0;
+            local_move_direction.z += 1.0;
         }
         if self.direction_inputs[2] {
             local_move_direction.x -= 1.0;
@@ -135,11 +202,11 @@ impl CameraController {
 
         if local_move_direction.magnitude2() > 0.0 {
             local_move_direction = local_move_direction.normalize();
-            let movement = camera.orientation * local_move_direction * self.speed * delta_time;
-            camera.position += movement;
+            let movement = eye.orientation * local_move_direction * self.speed * delta_time;
+            eye.position += movement;
         }
 
-        let mouse_sensitivity = 0.5 / 1000.0;
+        let mouse_sensitivity = 1.0 / 1000.0;
         let delta_yaw = Rad((self.mouse_delta.0 as f32) * mouse_sensitivity);
         let delta_pitch = Rad((self.mouse_delta.1 as f32) * mouse_sensitivity);
 
@@ -148,7 +215,7 @@ impl CameraController {
         let yaw_rotation = Quaternion::from_angle_y(-delta_yaw);
         let pitch_rotation = Quaternion::from_angle_x(-delta_pitch);
 
-        camera.orientation = (yaw_rotation * camera.orientation) * pitch_rotation;
-        camera.orientation = camera.orientation.normalize();
+        eye.orientation = (yaw_rotation * eye.orientation) * pitch_rotation;
+        eye.orientation = eye.orientation.normalize();
     }
 }

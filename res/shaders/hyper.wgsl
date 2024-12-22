@@ -1,3 +1,5 @@
+// Currently it'a a copy of basic.wgsl, later it will be updated to be a hyperbolic shader
+
 struct CameraUniform {
     view_proj : mat4x4<f32>,
 };

@@ -4,3 +4,5 @@ macro_rules! res_path {
         concat!(env!("CARGO_MANIFEST_DIR"), "/res/", $relative_path)
     };
 }
+
+pub mod resources;
